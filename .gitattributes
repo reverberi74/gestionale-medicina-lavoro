@@ -1,0 +1,13 @@
+* text=auto
+
+# Script per Linux/container: LF
+*.sh text eol=lf
+
+# Batch/PowerShell Windows: CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Config comuni (ok LF)
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf

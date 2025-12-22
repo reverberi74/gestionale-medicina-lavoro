@@ -1,0 +1,41 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local notes (tua cartella)
+Studio/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Node / client
+client/node_modules/
+client/dist/
+client/.env
+client/.env.*
+
+# Laravel / server
+server/vendor/
+server/.env
+server/.env.*
+server/storage/*.key
+server/storage/logs/
+server/storage/framework/cache/
+server/storage/framework/sessions/
+server/storage/framework/views/
+server/bootstrap/cache/
+
+# Uploads / generated files (quando li avrai)
+server/storage/app/private/
+server/storage/app/public/
+
+# Logs
+*.log
+
+# Docker local volumes (se li creerai come cartella)
+infra/volumes/
