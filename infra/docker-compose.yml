@@ -1,0 +1,110 @@
+name: gmdl
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: gmdl-mysql
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      TZ: Europe/Rome
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_REGISTRY_DB}
+      MYSQL_USER: ${MYSQL_APP_USER}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
+    command:
+      [
+        "mysqld",
+        "--character-set-server=utf8mb4",
+        "--collation-server=utf8mb4_0900_ai_ci"
+      ]
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - gmdl_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: gmdl-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - gmdl_net
+
+  minio:
+    image: minio/minio:latest
+    container_name: gmdl-minio
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - gmdl_net
+
+  minio_init:
+    image: minio/mc:latest
+    container_name: gmdl-minio-init
+    restart: "no"
+    env_file:
+      - ./.env
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    volumes:
+      - ./minio/init:/init:ro
+    entrypoint: ["/bin/sh", "/init/01-bootstrap.sh"]
+    networks:
+      - gmdl_net
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: gmdl-mailpit
+    restart: unless-stopped
+    ports:
+      - "8026:8025"
+      - "1026:1025"
+    volumes:
+      - mailpit_data:/data
+    environment:
+      MP_DATA_FILE: /data/mailpit.db
+    networks:
+      - gmdl_net
+
+volumes:
+  mysql_data:
+  redis_data:
+  minio_data:
+  mailpit_data:
+
+networks:
+  gmdl_net:
+    driver: bridge

@@ -39,3 +39,8 @@ server/storage/app/public/
 
 # Docker local volumes (se li creerai come cartella)
 infra/volumes/
+touch
+
+# env locale (non committare)
+infra/.env
+infra/.env.*
