@@ -57,9 +57,12 @@ class BillingController extends Controller
                 'status' => $tenant->status,
                 'current_subscription_id' => $tenant->current_subscription_id,
             ] : null,
-            'subscription' => $tenant && $tenant->currentSubscription
-                ? (new SubscriptionResource($tenant->currentSubscription))->response()->getData(true)
+
+            // ✅ niente wrapper "data": serializziamo la Resource inline
+            'subscription' => ($tenant && $tenant->currentSubscription)
+                ? new SubscriptionResource($tenant->currentSubscription)
                 : null,
+
             'config' => [
                 'trial_days' => (int) config('billing.trial_days', 14),
                 'grace_days' => (int) config('billing.grace_days', 7),
