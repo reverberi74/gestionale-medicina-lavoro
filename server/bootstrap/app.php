@@ -14,6 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Resolve tenant (subdomain) for every API request.
         $middleware->appendToGroup('api', \App\Http\Middleware\ResolveTenant::class);
+        // Audit trail (registry)
+        $middleware->appendToGroup('api', \App\Http\Middleware\AuditTrail::class);
 
         // Middleware aliases (Laravel 12)
         $middleware->alias([
@@ -21,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant.domain' => \App\Http\Middleware\EnsureTenantDomainOnly::class,
             'domain.scope' => \App\Http\Middleware\EnsureDomainScope::class,
             'role' => \App\Http\Middleware\EnsureRole::class,
+            'user.active' => \App\Http\Middleware\EnsureUserActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

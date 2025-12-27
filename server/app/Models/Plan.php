@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Plan extends Model
 {
+    protected $connection = 'registry';
+
     protected $fillable = [
         'code',
         'name',

@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Tenant extends Model
 {
+    protected $connection = 'registry';
+
     protected $fillable = [
         'key',
         'name',
