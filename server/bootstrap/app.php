@@ -14,6 +14,14 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Resolve tenant (subdomain) for every API request.
         $middleware->appendToGroup('api', \App\Http\Middleware\ResolveTenant::class);
+
+        // Middleware aliases (Laravel 12)
+        $middleware->alias([
+            'admin.domain' => \App\Http\Middleware\EnsureAdminDomainOnly::class,
+            'tenant.domain' => \App\Http\Middleware\EnsureTenantDomainOnly::class,
+            'domain.scope' => \App\Http\Middleware\EnsureDomainScope::class,
+            'role' => \App\Http\Middleware\EnsureRole::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

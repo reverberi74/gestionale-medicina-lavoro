@@ -37,7 +37,6 @@ class AuthController extends Controller
 
         $guard = $this->guard();
 
-        // ✅ credenziali
         /** @var string|false $token */
         $token = $guard->attempt([
             'email' => $data['email'],
@@ -64,20 +63,49 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // ✅ Tenant/domain enforcement (se stai su host tenant)
+        $host = strtolower($request->getHost());
         $resolvedTenantId = app()->bound('tenant.id') ? app('tenant.id') : null;
 
-        if ($resolvedTenantId !== null) {
-            // super_admin può entrare ovunque (control-plane)
-            if (($user->role ?? null) !== 'super_admin') {
-                if ((int) $user->tenant_id !== (int) $resolvedTenantId) {
-                    $guard->logout();
+        // ✅ Domain enforcement (A/1)
+        if (($user->role ?? null) === 'super_admin') {
+            // super_admin: SOLO control-plane/admin host
+            if (! $this->isAllowedAdminHost($host)) {
+                $guard->logout();
 
-                    return response()->json([
-                        'error' => 'TENANT_MISMATCH',
-                        'message' => 'Tenant non coerente con il dominio.',
-                    ], 403);
-                }
+                return response()->json([
+                    'error' => 'ADMIN_DOMAIN_ONLY',
+                    'message' => 'Il super admin può accedere solo dal dominio admin (control-plane).',
+                    'host' => $host,
+                ], 403);
+            }
+        } else {
+            // tenant users: SOLO su dominio tenant (deve risolvere tenant.id)
+            if ($resolvedTenantId === null) {
+                $guard->logout();
+
+                return response()->json([
+                    'error' => 'TENANT_DOMAIN_REQUIRED',
+                    'message' => 'Gli utenti tenant possono accedere solo dal dominio del tenant.',
+                    'host' => $host,
+                ], 403);
+            }
+
+            if ($user->tenant_id === null) {
+                $guard->logout();
+
+                return response()->json([
+                    'error' => 'USER_TENANT_REQUIRED',
+                    'message' => 'Utente non associato a nessun tenant.',
+                ], 403);
+            }
+
+            if ((int) $user->tenant_id !== (int) $resolvedTenantId) {
+                $guard->logout();
+
+                return response()->json([
+                    'error' => 'TENANT_MISMATCH',
+                    'message' => 'Tenant non coerente con il dominio.',
+                ], 403);
             }
         }
 
@@ -175,5 +203,27 @@ class AuthController extends Controller
             'access_token' => $token,
             'expires_in' => $guard->factory()->getTTL() * 60,
         ]);
+    }
+
+    private function isAllowedAdminHost(string $host): bool
+    {
+        $allowedHosts = (array) config('admin.allowed_hosts', []);
+        if (in_array($host, array_map('strtolower', $allowedHosts), true)) {
+            return true;
+        }
+
+        $adminDomain = strtolower((string) config('admin.domain', ''));
+        if ($adminDomain !== '' && $host === $adminDomain) {
+            return true;
+        }
+
+        $allowDevAdminSubdomain = (bool) config('admin.allow_dev_admin_subdomain', true);
+        if ($allowDevAdminSubdomain && app()->environment(['local', 'development', 'testing'])) {
+            if (str_starts_with($host, 'admin.')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

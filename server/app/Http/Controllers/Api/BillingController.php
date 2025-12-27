@@ -15,7 +15,15 @@ class BillingController extends Controller
      */
     public function status(Request $request)
     {
-        $user = $request->user();
+        $user = auth('api')->user();
+
+        if (! $user) {
+            return response()->json([
+                'ok' => false,
+                'error' => 'UNAUTHENTICATED',
+                'message' => 'Unauthenticated.',
+            ], 401);
+        }
 
         $resolvedTenantId = app()->bound('tenant.id') ? (int) app('tenant.id') : null;
         $userTenantId = $user->tenant_id !== null ? (int) $user->tenant_id : null;
@@ -58,7 +66,7 @@ class BillingController extends Controller
                 'current_subscription_id' => $tenant->current_subscription_id,
             ] : null,
 
-            // ✅ niente wrapper "data": serializziamo la Resource inline
+            // serializziamo la Resource inline (senza wrapper "data")
             'subscription' => ($tenant && $tenant->currentSubscription)
                 ? new SubscriptionResource($tenant->currentSubscription)
                 : null,

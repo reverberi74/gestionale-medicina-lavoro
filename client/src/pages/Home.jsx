@@ -58,7 +58,7 @@ export default function Home() {
 
             <a
               className="text-sm font-medium text-neutral-700 underline decoration-neutral-300 underline-offset-4 hover:text-neutral-900"
-              href="http://acme.127.0.0.1.nip.io:5173"
+              href="http://acme.127.0.0.1.nip.io:5349"
             >
               Apri tenant demo (acme)
             </a>

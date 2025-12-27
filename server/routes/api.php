@@ -4,7 +4,9 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\Admin\PlansController;
 use App\Http\Controllers\Api\Admin\TenantSubscriptionController;
+use App\Http\Middleware\EnsureAdminDomainOnly;
 use App\Http\Middleware\EnsureSubscriptionActive;
+use App\Http\Middleware\EnsureSuperAdmin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -32,21 +34,30 @@ Route::get('/health', function (Request $request) {
 // Auth (JWT)
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
-    Route::post('logout', [AuthController::class, 'logout'])->middleware('auth:api');
-    Route::get('me', [AuthController::class, 'me'])->middleware('auth:api');
-    Route::post('refresh', [AuthController::class, 'refresh'])->middleware('auth:api');
+
+    // Per tutte le rotte autenticate: enforce dominio coerente col ruolo
+    Route::post('logout', [AuthController::class, 'logout'])->middleware(['auth:api', 'domain.scope']);
+    Route::get('me', [AuthController::class, 'me'])->middleware(['auth:api', 'domain.scope']);
+    Route::post('refresh', [AuthController::class, 'refresh'])->middleware(['auth:api', 'domain.scope']);
 });
 
-// Billing status (solo auth, così anche se scaduto la UI vede lo stato)
-Route::get('billing/status', [BillingController::class, 'status'])->middleware('auth:api');
+// Billing status (solo auth + domain scope, così anche se scaduto la UI vede lo stato)
+Route::get('billing/status', [BillingController::class, 'status'])
+    ->middleware(['auth:api', 'domain.scope']);
 
-// Admin (super_admin)
-Route::prefix('admin')->middleware('auth:api')->group(function () {
-    Route::get('plans', [PlansController::class, 'index']);
-    Route::post('tenants/{tenant}/subscription', [TenantSubscriptionController::class, 'store']);
-});
+// Admin (control-plane): super_admin + SOLO dominio root/admin
+Route::prefix('admin')
+    ->middleware([
+        'auth:api',
+        EnsureAdminDomainOnly::class,
+        EnsureSuperAdmin::class,
+    ])
+    ->group(function () {
+        Route::get('plans', [PlansController::class, 'index']);
+        Route::post('tenants/{tenant}/subscription', [TenantSubscriptionController::class, 'store']);
+    });
 
-// Example protected route (auth + subscription enforcement)
+// Example protected route (tenant-only + subscription enforcement)
 Route::get('protected/ping', function () {
     return response()->json(['ok' => true, 'ts' => now()->toISOString()]);
-})->middleware(['auth:api', EnsureSubscriptionActive::class]);
+})->middleware(['auth:api', 'domain.scope', 'tenant.domain', EnsureSubscriptionActive::class]);

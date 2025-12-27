@@ -17,9 +17,10 @@ class ResolveTenant
         app()->instance('tenant.key', $tenantKey);
 
         // Registry-only request (no tenant)
-        if (!$tenantKey) {
+        if (! $tenantKey) {
             app()->instance('tenant.id', null);
             app()->instance('tenant.db', null);
+
             return $next($request);
         }
 
@@ -29,7 +30,7 @@ class ResolveTenant
             ->where('key', $tenantKey)
             ->first();
 
-        if (!$tenant) {
+        if (! $tenant) {
             return response()->json([
                 'ok' => false,
                 'error' => 'TENANT_NOT_FOUND',
@@ -54,8 +55,13 @@ class ResolveTenant
             return null;
         }
 
-        // raw IP → no tenant
+        // raw IPv4 → no tenant
         if (preg_match('/^\d{1,3}(\.\d{1,3}){3}$/', $host)) {
+            return null;
+        }
+
+        // nip.io base domain like "127.0.0.1.nip.io" → registry-only (no tenant)
+        if (preg_match('/^\d{1,3}(\.\d{1,3}){3}\.nip\.io$/', $host)) {
             return null;
         }
 
@@ -66,12 +72,13 @@ class ResolveTenant
 
         $candidate = $parts[0];
 
-        $reserved = ['api', 'app', 'www'];
+        // reserved subdomains (control-plane / shared)
+        $reserved = ['api', 'app', 'www', 'admin'];
         if (in_array($candidate, $reserved, true)) {
             return null;
         }
 
-        if (!preg_match('/^[a-z0-9-]+$/', $candidate)) {
+        if (! preg_match('/^[a-z0-9-]+$/', $candidate)) {
             return null;
         }
 
