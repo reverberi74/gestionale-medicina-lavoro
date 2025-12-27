@@ -111,7 +111,7 @@ class AuthController extends Controller
 
         // ✅ Tenant status check (solo se user è legato a un tenant)
         if ($user->tenant_id !== null) {
-            $tenant = DB::table('tenants')
+            $tenant = DB::connection('registry')->table('tenants')
                 ->select(['id', 'status'])
                 ->where('id', $user->tenant_id)
                 ->first();

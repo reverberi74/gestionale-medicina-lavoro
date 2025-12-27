@@ -33,22 +33,24 @@ Route::get('/health', function (Request $request) {
 
 // Auth (JWT)
 Route::prefix('auth')->group(function () {
-    Route::post('login', [AuthController::class, 'login']);
+    Route::post('login', [AuthController::class, 'login'])->middleware(['throttle:login']);
 
     // Per tutte le rotte autenticate: enforce dominio coerente col ruolo
-    Route::post('logout', [AuthController::class, 'logout'])->middleware(['auth:api', 'domain.scope']);
-    Route::get('me', [AuthController::class, 'me'])->middleware(['auth:api', 'domain.scope']);
-    Route::post('refresh', [AuthController::class, 'refresh'])->middleware(['auth:api', 'domain.scope']);
+    Route::post('logout', [AuthController::class, 'logout'])->middleware(['auth:api', 'domain.scope', 'user.active']);
+    Route::get('me', [AuthController::class, 'me'])->middleware(['auth:api', 'domain.scope', 'user.active']);
+    Route::post('refresh', [AuthController::class, 'refresh'])->middleware(['auth:api', 'domain.scope', 'user.active']);
 });
 
 // Billing status (solo auth + domain scope, così anche se scaduto la UI vede lo stato)
 Route::get('billing/status', [BillingController::class, 'status'])
-    ->middleware(['auth:api', 'domain.scope']);
+    ->middleware(['auth:api', 'domain.scope', 'user.active']);
 
 // Admin (control-plane): super_admin + SOLO dominio root/admin
 Route::prefix('admin')
     ->middleware([
         'auth:api',
+        'user.active',
+        'throttle:admin',
         EnsureAdminDomainOnly::class,
         EnsureSuperAdmin::class,
     ])
