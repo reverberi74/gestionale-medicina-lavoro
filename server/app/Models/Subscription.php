@@ -2,13 +2,10 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Subscription extends Model
+class Subscription extends RegistryModel
 {
-    protected $connection = 'registry';
-
     protected $fillable = [
         'tenant_id',
         'plan_id',

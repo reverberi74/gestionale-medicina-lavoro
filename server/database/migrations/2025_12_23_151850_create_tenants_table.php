@@ -6,9 +6,12 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    // ✅ sempre control-plane
+    protected $connection = 'registry';
+
     public function up(): void
     {
-        Schema::create('tenants', function (Blueprint $table) {
+        Schema::connection('registry')->create('tenants', function (Blueprint $table) {
             $table->id();
 
             // stable tenant identifier (subdomain key)
@@ -19,8 +22,8 @@ return new class extends Migration
             // physical database name for this tenant
             $table->string('db_name', 128)->unique();
 
-            // minimal subscription/status flag (we’ll evolve later)
-            $table->string('status', 32)->default('trial');
+            // ✅ operational status (trial = subscriptions.status)
+            $table->string('status', 32)->default('active');
 
             $table->timestamps();
 
@@ -30,6 +33,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('tenants');
+        Schema::connection('registry')->dropIfExists('tenants');
     }
 };

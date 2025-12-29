@@ -5,9 +5,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
+    // ✅ sempre control-plane
+    protected $connection = 'registry';
+
     public function up(): void
     {
-        Schema::create('plans', function (Blueprint $table) {
+        Schema::connection('registry')->create('plans', function (Blueprint $table) {
             $table->id();
 
             $table->string('code', 80)->unique(); // monthly_basic, yearly_basic, etc.
@@ -17,16 +20,17 @@ return new class extends Migration {
             $table->char('currency', 3)->default('EUR');
             $table->boolean('is_active')->default(true);
 
-            // Feature gating (future proof)
             $table->json('features')->nullable();
             $table->json('limits')->nullable();
 
             $table->timestamps();
+
+            $table->index(['is_active']);
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('plans');
+        Schema::connection('registry')->dropIfExists('plans');
     }
 };

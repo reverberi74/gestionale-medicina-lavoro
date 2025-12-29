@@ -51,7 +51,8 @@ class TenantSubscriptionController extends Controller
         $defaultDays = $plan->billing_period === 'yearly' ? 365 : 30;
         $periodDays = (int) ($data['period_days'] ?? $defaultDays);
 
-        $result = DB::transaction(function () use ($tenant, $plan, $status, $periodDays, $user) {
+        // ✅ PATCH: transazione esplicita su registry (future-proof)
+        $result = DB::connection('registry')->transaction(function () use ($tenant, $plan, $status, $periodDays, $user) {
             // Lock tenant row to avoid races
             $lockedTenant = Tenant::query()
                 ->with(['currentSubscription'])
@@ -85,7 +86,9 @@ class TenantSubscriptionController extends Controller
                 ],
             ]);
 
+            // ✅ PATCH: aggiorna anche la shadow column per FK composita (id, tenant_id)
             $lockedTenant->current_subscription_id = $sub->id;
+            $lockedTenant->current_subscription_tenant_id = $lockedTenant->id;
             $lockedTenant->save();
 
             $sub->load('plan');

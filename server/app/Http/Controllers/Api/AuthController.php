@@ -166,6 +166,14 @@ class AuthController extends Controller
         /** @var User $user */
         $user = $guard->user();
 
+        // ✅ user active check (defense in depth: anche con token già emesso)
+        if (! $user->is_active) {
+            return response()->json([
+                'error' => 'USER_DISABLED',
+                'message' => 'Account disabilitato.',
+            ], 403);
+        }
+
         return response()->json([
             'user' => [
                 'id' => $user->id,

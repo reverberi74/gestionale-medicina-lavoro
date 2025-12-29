@@ -2,20 +2,18 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Tenant extends Model
+class Tenant extends RegistryModel
 {
-    protected $connection = 'registry';
-
     protected $fillable = [
         'key',
         'name',
         'db_name',
         'status',
         'current_subscription_id',
+        'current_subscription_tenant_id',
     ];
 
     public function subscriptions(): HasMany
