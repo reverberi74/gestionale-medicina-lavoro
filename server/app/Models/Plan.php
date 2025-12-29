@@ -2,13 +2,10 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Plan extends Model
+class Plan extends RegistryModel
 {
-    protected $connection = 'registry';
-
     protected $fillable = [
         'code',
         'name',

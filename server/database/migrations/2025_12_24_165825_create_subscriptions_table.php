@@ -5,9 +5,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
+    // ✅ sempre control-plane
+    protected $connection = 'registry';
+
     public function up(): void
     {
-        Schema::create('subscriptions', function (Blueprint $table) {
+        Schema::connection('registry')->create('subscriptions', function (Blueprint $table) {
             $table->id();
 
             $table->unsignedBigInteger('tenant_id');
@@ -37,11 +40,12 @@ return new class extends Migration {
 
             $table->index(['tenant_id', 'status']);
             $table->index(['status', 'current_period_end_at']);
+            $table->index(['provider', 'provider_ref']);
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('subscriptions');
+        Schema::connection('registry')->dropIfExists('subscriptions');
     }
 };

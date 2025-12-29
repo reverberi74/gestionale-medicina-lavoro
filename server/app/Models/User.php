@@ -15,6 +15,11 @@ class User extends Authenticatable implements JWTSubject
     use HasFactory, Notifiable;
 
     /**
+     * Force registry/control-plane connection for auth users.
+     */
+    protected $connection = 'registry';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
