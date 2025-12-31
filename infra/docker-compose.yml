@@ -90,8 +90,8 @@ services:
     container_name: gmdl-mailpit
     restart: unless-stopped
     ports:
-      - "8026:8025"
-      - "1026:1025"
+      - "127.0.0.1:8026:8025"
+      - "127.0.0.1:2525:1025"
     volumes:
       - mailpit_data:/data
     environment:
