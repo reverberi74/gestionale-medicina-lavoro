@@ -25,17 +25,9 @@ class TenantProvisioningService
         $seed = array_key_exists('seed', $options) ? (bool) $options['seed'] : true;
 
         $dbName = (string) $tenant->db_name;
+        $this->assertSafeDbName($dbName);
 
-        // Safety: only allow safe db identifiers (no backticks, spaces, etc.)
-        if (! preg_match('/\A[a-zA-Z0-9_]+\z/', $dbName)) {
-            throw new RuntimeException("DB_NAME_NOT_SAFE: '{$dbName}'");
-        }
-
-        $lockKey = "gmdl:tenant:provision:{$tenant->id}";
-
-        $this->acquireLock($lockKey, $timeout);
-
-        try {
+        return $this->withTenantLock((int) $tenant->id, 'provision', $timeout, function () use ($tenant, $dryRun, $seed, $dbName) {
             if ($dryRun) {
                 return [
                     'ok' => true,
@@ -55,34 +47,13 @@ class TenantProvisioningService
             $this->createDatabaseIfNotExists($dbName);
 
             $this->configureTenantConnection($dbName);
+            $this->assertTenantConnection($dbName);
 
-            // Sanity check: ensure we're connected to expected DB
-            $currentDb = DB::connection('tenant')->selectOne('select database() as db');
-            if (! $currentDb || (string) $currentDb->db !== $dbName) {
-                throw new RuntimeException("TENANT_CONNECTION_MISMATCH: expected '{$dbName}' got '".($currentDb->db ?? 'null')."'");
-            }
-
-            $migrateExit = Artisan::call('migrate', [
-                '--database' => 'tenant',
-                '--path' => 'database/migrations/tenant',
-                '--force' => true,
-            ]);
-
-            if ($migrateExit !== 0) {
-                throw new RuntimeException('TENANT_MIGRATE_FAILED: exit='.$migrateExit.' output='.trim(Artisan::output()));
-            }
+            $migrateExit = $this->runMigrations();
 
             $seedExit = null;
             if ($seed) {
-                $seedExit = Artisan::call('db:seed', [
-                    '--database' => 'tenant',
-                    '--class' => 'Database\\Seeders\\Tenant\\TenantDatabaseSeeder',
-                    '--force' => true,
-                ]);
-
-                if ($seedExit !== 0) {
-                    throw new RuntimeException('TENANT_SEED_FAILED: exit='.$seedExit.' output='.trim(Artisan::output()));
-                }
+                $seedExit = $this->runSeed();
             }
 
             return [
@@ -94,24 +65,29 @@ class TenantProvisioningService
                 'migrate_exit' => $migrateExit,
                 'seed_exit' => $seedExit,
             ];
-        } catch (Throwable $e) {
-            throw $e;
-        } finally {
-            $this->releaseLock($lockKey);
-        }
+        });
     }
 
-    private function createDatabaseIfNotExists(string $dbName): void
+    /**
+     * Creates the tenant database if missing.
+     * NOTE: requires CREATE privilege for the DB user on the MySQL server.
+     */
+    public function createDatabaseIfNotExists(string $dbName): void
     {
-        // NOTE: requires CREATE privilege for the DB user on the MySQL server.
-        // We keep charset/collation aligned with MySQL 8 defaults used in registry.
+        $this->assertSafeDbName($dbName);
+
         DB::connection('registry')->statement(
             "CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
         );
     }
 
-    private function configureTenantConnection(string $dbName): void
+    /**
+     * Configure tenant connection at runtime and reconnect.
+     */
+    public function configureTenantConnection(string $dbName): void
     {
+        $this->assertSafeDbName($dbName);
+
         config(['database.connections.tenant.database' => $dbName]);
 
         // Purge + reconnect to apply the new database name.
@@ -119,13 +95,101 @@ class TenantProvisioningService
         DB::reconnect('tenant');
     }
 
-    private function acquireLock(string $key, int $timeout): void
+    /**
+     * Sanity check: ensure we are connected to the expected tenant DB.
+     */
+    public function assertTenantConnection(string $expectedDbName): void
+    {
+        $currentDb = DB::connection('tenant')->selectOne('select database() as db');
+
+        if (! $currentDb || (string) ($currentDb->db ?? '') !== $expectedDbName) {
+            throw new RuntimeException(
+                "TENANT_CONNECTION_MISMATCH: expected '{$expectedDbName}' got '".((string) ($currentDb->db ?? 'null'))."'"
+            );
+        }
+    }
+
+    /**
+     * Run tenant migrations (database/migrations/tenant) on the configured tenant connection.
+     * Returns exit code (0 on success) or throws on failure.
+     */
+    public function runMigrations(string $path = 'database/migrations/tenant'): int
+    {
+        $exit = Artisan::call('migrate', [
+            '--database' => 'tenant',
+            '--path' => $path,
+            '--force' => true,
+        ]);
+
+        if ($exit !== 0) {
+            throw new RuntimeException(
+                'TENANT_MIGRATE_FAILED: exit='.$exit.' output='.trim(Artisan::output())
+            );
+        }
+
+        return $exit;
+    }
+
+    /**
+     * Run tenant seeder on the configured tenant connection.
+     * Returns exit code (0 on success) or throws on failure.
+     */
+    public function runSeed(string $class = 'Database\\Seeders\\Tenant\\TenantDatabaseSeeder'): int
+    {
+        $exit = Artisan::call('db:seed', [
+            '--database' => 'tenant',
+            '--class' => $class,
+            '--force' => true,
+        ]);
+
+        if ($exit !== 0) {
+            throw new RuntimeException(
+                'TENANT_SEED_FAILED: exit='.$exit.' output='.trim(Artisan::output())
+            );
+        }
+
+        return $exit;
+    }
+
+    /**
+     * Generic tenant lock wrapper (MySQL advisory lock on registry connection).
+     *
+     * IMPORTANT:
+     * - lock key is UNIQUE per tenant (not per "purpose")
+     * - this prevents migrate/provision/repair concurrency for the same tenant
+     *
+     * @template T
+     * @param  callable():T  $fn
+     * @return T
+     */
+    public function withTenantLock(int $tenantId, string $purpose, int $timeout, callable $fn)
+    {
+        $lockKey = "gmdl:tenant:lock:{$tenantId}";
+
+        $this->acquireLock($lockKey, $timeout, $purpose);
+
+        try {
+            return $fn();
+        } finally {
+            $this->releaseLock($lockKey);
+        }
+    }
+
+    private function assertSafeDbName(string $dbName): void
+    {
+        // Safety: only allow safe db identifiers (no backticks, spaces, etc.)
+        if (! preg_match('/\A[a-zA-Z0-9_]+\z/', $dbName)) {
+            throw new RuntimeException("DB_NAME_NOT_SAFE: '{$dbName}'");
+        }
+    }
+
+    private function acquireLock(string $key, int $timeout, string $purpose): void
     {
         $row = DB::connection('registry')->selectOne('SELECT GET_LOCK(?, ?) AS l', [$key, $timeout]);
         $ok = $row && ((int) ($row->l ?? 0) === 1);
 
         if (! $ok) {
-            throw new RuntimeException("TENANT_PROVISION_LOCK_TIMEOUT: {$key}");
+            throw new RuntimeException("TENANT_LOCK_TIMEOUT: purpose={$purpose} key={$key}");
         }
     }
 

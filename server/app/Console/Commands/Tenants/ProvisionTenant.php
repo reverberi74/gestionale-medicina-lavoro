@@ -28,7 +28,11 @@ class ProvisionTenant extends Command
         $identifier = (string) $this->argument('tenant');
 
         $tenant = Tenant::query()
-            ->when(ctype_digit($identifier), fn ($q) => $q->where('id', (int) $identifier), fn ($q) => $q->where('key', $identifier))
+            ->when(
+                ctype_digit($identifier),
+                fn ($q) => $q->where('id', (int) $identifier),
+                fn ($q) => $q->where('key', $identifier)
+            )
             ->first();
 
         if (! $tenant) {
