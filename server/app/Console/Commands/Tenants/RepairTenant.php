@@ -3,18 +3,12 @@
 namespace App\Console\Commands\Tenants;
 
 use App\Models\Tenant;
+use App\Services\TenantOperationRunService;
 use App\Services\TenantProvisioningService;
 use Illuminate\Console\Command;
 
 class RepairTenant extends Command
 {
-    /**
-     * Safe re-run for a tenant:
-     * - (optional) create DB if missing
-     * - configure tenant connection
-     * - migrate tenant path
-     * - seed base data (default yes)
-     */
     protected $signature = 'tenants:repair
         {tenant : Tenant id or tenant key}
         {--timeout=10 : Lock timeout seconds}
@@ -25,7 +19,7 @@ class RepairTenant extends Command
 
     protected $description = 'Repair tenant database (safe re-run: create DB if missing, migrate tenant, seed base data).';
 
-    public function handle(TenantProvisioningService $service): int
+    public function handle(TenantProvisioningService $service, TenantOperationRunService $runs): int
     {
         $identifier = (string) $this->argument('tenant');
 
@@ -48,8 +42,22 @@ class RepairTenant extends Command
         $seed = ! (bool) $this->option('no-seed');
         $seedClass = (string) $this->option('seed-class');
 
+        $run = null;
+
         try {
             $this->info("Repairing tenant: id={$tenant->id} key={$tenant->key} db={$tenant->db_name}");
+
+            if (! $dryRun) {
+                $run = $runs->start($tenant, 'repair', [
+                    'tenant_key' => $tenant->key,
+                    'db_name' => (string) $tenant->db_name,
+                    'create_db' => $createDb,
+                    'seed' => $seed,
+                    'seed_class' => $seed ? $seedClass : null,
+                    'timeout' => $timeout,
+                    'trigger' => 'cli',
+                ]);
+            }
 
             $result = $service->withTenantLock((int) $tenant->id, 'repair', $timeout, function () use ($service, $tenant, $dryRun, $createDb, $seed, $seedClass) {
                 $dbName = (string) $tenant->db_name;
@@ -98,11 +106,23 @@ class RepairTenant extends Command
                 ];
             });
 
+            if ($run) {
+                $runs->markSuccess($run, [
+                    'create_db' => $result['create_db'] ?? null,
+                    'migrate_exit' => $result['migrate_exit'] ?? null,
+                    'seed_exit' => $result['seed_exit'] ?? null,
+                ]);
+            }
+
             $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
             $this->info('DONE');
 
             return self::SUCCESS;
         } catch (\Throwable $e) {
+            if ($run) {
+                $runs->markFailed($run, $e);
+            }
+
             $this->error('FAILED: '.$e->getMessage());
             return self::FAILURE;
         }

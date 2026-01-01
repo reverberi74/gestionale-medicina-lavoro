@@ -3,15 +3,13 @@
 namespace App\Console\Commands\Tenants;
 
 use App\Models\Tenant;
+use App\Services\TenantOperationRunService;
 use App\Services\TenantProvisioningService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
 
 class MigrateTenant extends Command
 {
-    /**
-     * tenants:migrate {tenant} [--seed]
-     * tenants:migrate --all [--seed]
-     */
     protected $signature = 'tenants:migrate
         {tenant? : Tenant id or tenant key (required unless --all)}
         {--all : Migrate all active tenants}
@@ -21,7 +19,7 @@ class MigrateTenant extends Command
 
     protected $description = 'Run tenant migrations (and optional seeding) for one tenant or all active tenants.';
 
-    public function handle(TenantProvisioningService $service): int
+    public function handle(TenantProvisioningService $service, TenantOperationRunService $runs): int
     {
         $timeout = (int) $this->option('timeout');
         $seed = (bool) $this->option('seed');
@@ -46,12 +44,27 @@ class MigrateTenant extends Command
                 return self::SUCCESS;
             }
 
+            $batchId = (string) Str::uuid();
+
             $results = [];
             $failed = 0;
 
             foreach ($tenants as $tenant) {
+                $run = null;
+
                 try {
                     $this->info("Migrating tenant: id={$tenant->id} key={$tenant->key} db={$tenant->db_name}");
+
+                    $run = $runs->start($tenant, 'migrate', [
+                        'mode' => 'all',
+                        'batch_id' => $batchId,
+                        'tenant_key' => $tenant->key,
+                        'db_name' => (string) $tenant->db_name,
+                        'seed' => $seed,
+                        'seed_class' => $seed ? $seedClass : null,
+                        'timeout' => $timeout,
+                        'trigger' => 'cli',
+                    ]);
 
                     $result = $service->withTenantLock((int) $tenant->id, 'migrate', $timeout, function () use ($service, $tenant, $seed, $seedClass) {
                         $dbName = (string) $tenant->db_name;
@@ -76,9 +89,18 @@ class MigrateTenant extends Command
                         ];
                     });
 
+                    $runs->markSuccess($run, [
+                        'migrate_exit' => $result['migrate_exit'] ?? null,
+                        'seed_exit' => $result['seed_exit'] ?? null,
+                    ]);
+
                     $results[] = $result;
                 } catch (\Throwable $e) {
                     $failed++;
+
+                    if ($run) {
+                        $runs->markFailed($run, $e);
+                    }
 
                     $results[] = [
                         'ok' => false,
@@ -95,6 +117,7 @@ class MigrateTenant extends Command
             $summary = [
                 'ok' => ($failed === 0),
                 'mode' => 'all',
+                'batch_id' => $batchId,
                 'total' => count($results),
                 'failed' => $failed,
                 'seed' => $seed,
@@ -123,8 +146,20 @@ class MigrateTenant extends Command
             return self::FAILURE;
         }
 
+        $run = null;
+
         try {
             $this->info("Migrating tenant: id={$tenant->id} key={$tenant->key} db={$tenant->db_name}");
+
+            $run = $runs->start($tenant, 'migrate', [
+                'mode' => 'single',
+                'tenant_key' => $tenant->key,
+                'db_name' => (string) $tenant->db_name,
+                'seed' => $seed,
+                'seed_class' => $seed ? $seedClass : null,
+                'timeout' => $timeout,
+                'trigger' => 'cli',
+            ]);
 
             $result = $service->withTenantLock((int) $tenant->id, 'migrate', $timeout, function () use ($service, $tenant, $seed, $seedClass) {
                 $dbName = (string) $tenant->db_name;
@@ -150,11 +185,20 @@ class MigrateTenant extends Command
                 ];
             });
 
+            $runs->markSuccess($run, [
+                'migrate_exit' => $result['migrate_exit'] ?? null,
+                'seed_exit' => $result['seed_exit'] ?? null,
+            ]);
+
             $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
             $this->info('DONE');
 
             return self::SUCCESS;
         } catch (\Throwable $e) {
+            if ($run) {
+                $runs->markFailed($run, $e);
+            }
+
             $this->error('FAILED: '.$e->getMessage());
             return self::FAILURE;
         }
